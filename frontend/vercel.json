@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/tts", "destination": "http://98.87.156.70/api/tts" },
     { "source": "/upload/:path*", "destination": "http://98.87.156.70/upload/:path*" },
     { "source": "/files/:path*", "destination": "http://98.87.156.70/files/:path*" },
     { "source": "/extract/:path*", "destination": "http://98.87.156.70/extract/:path*" },

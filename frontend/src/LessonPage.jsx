@@ -611,39 +611,21 @@ function LessonIntro({ lesson, summary, questionsCount, onStart, images, imageCa
 }
 
 // ── Main Export ────────────────────────────────────────────────────────────
-// ── Audio Reader Hook ──────────────────────────────────────────────────────
+// ── Audio Reader Hook (AWS Polly) ──────────────────────────────────────────
+const POLLY_VOICES = [
+  { id: "Hala",  label: "🙎‍♀️ هالة (أنثى - عصبي)" },
+  { id: "Zayd",  label: "🙎‍♂️ زيد (ذكر - عصبي)" },
+  { id: "Zeina", label: "🙎‍♀️ زينة (أنثى - قياسي)" },
+];
+
 function useAudioReader(lesson, summary) {
   const [speaking, setSpeaking] = useState(false);
-  const [supported] = useState(() => "speechSynthesis" in window);
-  const [voices, setVoices] = useState([]);
-  const [selectedVoiceURI, setSelectedVoiceURI] = useState("");
-  const isSpeakingRef = useRef(false);
+  const [loading, setLoading] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState("Hala");
+  const audioRef = useRef(null);
+  const abortRef = useRef(null);
 
-  useEffect(() => {
-    if (!supported) return;
-    const synth = window.speechSynthesis;
-
-    const loadVoices = () => {
-      const all = synth.getVoices() || [];
-      const ar = all.filter((v) => String(v.lang || "").toLowerCase().startsWith("ar"));
-      setVoices(ar);
-
-      if (!selectedVoiceURI && ar.length) {
-        const preferred =
-          ar.find((v) => /hoda|naayf|majed|google|microsoft/i.test(v.name)) ||
-          ar[0];
-        setSelectedVoiceURI(preferred.voiceURI);
-      }
-    };
-
-    loadVoices();
-    synth.onvoiceschanged = loadVoices;
-    return () => {
-      synth.onvoiceschanged = null;
-    };
-  }, [supported, selectedVoiceURI]);
-
-  const buildChunks = () => {
+  const buildText = () => {
     const parts = [];
     parts.push(`درس: ${lesson.title}.`);
     if (lesson.objectives?.length) {
@@ -652,61 +634,62 @@ function useAudioReader(lesson, summary) {
     }
     lesson.sections?.forEach(sec => {
       parts.push(`${sec.heading}.`);
-      // split section content into sentences to avoid Chrome 15s bug
-      const sentences = sec.content
-        .split(/(?<=[.!?؟])/)
-        .map(s => s.trim())
-        .filter(s => s.length > 2);
-      parts.push(...sentences);
+      parts.push(sec.content);
     });
     if (summary) parts.push(`الملخص: ${summary}.`);
-    return parts;
+    return parts.join(" ");
   };
 
-  const speakChunk = (chunks, idx, voice) => {
-    if (!isSpeakingRef.current || idx >= chunks.length) {
-      setSpeaking(false);
-      isSpeakingRef.current = false;
-      return;
+  const stop = () => {
+    abortRef.current?.abort();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
     }
-    const utt = new SpeechSynthesisUtterance(chunks[idx]);
-    utt.lang = "ar-SA";
-    utt.rate = 0.82;
-    utt.pitch = 1;
-    utt.volume = 1;
-    if (voice) utt.voice = voice;
-    utt.onend = () => speakChunk(chunks, idx + 1, voice);
-    utt.onerror = () => { isSpeakingRef.current = false; setSpeaking(false); };
-    window.speechSynthesis.speak(utt);
+    setSpeaking(false);
+    setLoading(false);
   };
 
-  const toggle = () => {
-    if (!supported) return;
-    if (speaking) {
-      isSpeakingRef.current = false;
-      window.speechSynthesis.cancel();
-      setSpeaking(false);
-      return;
+  const toggle = async () => {
+    if (speaking || loading) { stop(); return; }
+    setLoading(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const text = buildText().slice(0, 2900);
+      const res = await fetch(`/api/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: selectedVoice }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "فشل تحميل الصوت");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); };
+      audio.onerror = () => { setSpeaking(false); setLoading(false); URL.revokeObjectURL(url); };
+      setLoading(false);
+      setSpeaking(true);
+      audio.play();
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        console.error("TTS error:", err);
+        setSpeaking(false);
+      }
+      setLoading(false);
     }
-    const chunks = buildChunks();
-    const allVoices = window.speechSynthesis.getVoices() || [];
-    const selected = allVoices.find((v) => v.voiceURI === selectedVoiceURI) || null;
-    const arVoice =
-      selected ||
-      allVoices.find((v) => String(v.lang || "").toLowerCase().startsWith("ar")) ||
-      null;
-    isSpeakingRef.current = true;
-    setSpeaking(true);
-    speakChunk(chunks, 0, arVoice);
   };
 
   // Stop on unmount
-  useEffect(() => () => {
-    isSpeakingRef.current = false;
-    window.speechSynthesis?.cancel();
-  }, []);
+  useEffect(() => () => stop(), []);
 
-  return { speaking, toggle, supported, voices, selectedVoiceURI, setSelectedVoiceURI };
+  return { speaking, loading, toggle, selectedVoice, setSelectedVoice };
 }
 
 export default function LessonPage({ lessonData, onClose }) {
@@ -717,7 +700,7 @@ export default function LessonPage({ lessonData, onClose }) {
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState([]);
   const [streak, setStreak] = useState(0);
-  const { speaking, toggle, supported, voices, selectedVoiceURI, setSelectedVoiceURI } = useAudioReader(lesson, summary);
+  const { speaking, loading, toggle, selectedVoice, setSelectedVoice } = useAudioReader(lesson, summary);
 
   const handleAnswer = (correct) => {
     const next = [...answers, correct];
@@ -728,7 +711,6 @@ export default function LessonPage({ lessonData, onClose }) {
   };
 
   const handleRetry = () => {
-    window.speechSynthesis?.cancel();
     setCurrent(0); setAnswers([]); setStreak(0); setPhase("intro");
   };
 
@@ -755,10 +737,10 @@ export default function LessonPage({ lessonData, onClose }) {
           </div>
         </div>
         <div style={s.headerRight}>
-          {phase === "intro" && supported && voices.length > 0 && (
+          {phase === "intro" && (
             <select
-              value={selectedVoiceURI}
-              onChange={(e) => setSelectedVoiceURI(e.target.value)}
+              value={selectedVoice}
+              onChange={(e) => setSelectedVoice(e.target.value)}
               style={{
                 background: "rgba(255,255,255,0.15)",
                 border: "1px solid rgba(255,255,255,0.3)",
@@ -770,26 +752,30 @@ export default function LessonPage({ lessonData, onClose }) {
               }}
               title="اختر الصوت"
             >
-              {voices.map((v) => (
-                <option key={v.voiceURI} value={v.voiceURI} style={{ color: "#111" }}>
-                  {v.name} ({v.lang})
+              {POLLY_VOICES.map((v) => (
+                <option key={v.id} value={v.id} style={{ color: "#111" }}>
+                  {v.label}
                 </option>
               ))}
             </select>
           )}
           {/* Audio button - only on intro phase */}
-          {phase === "intro" && supported && (
+          {phase === "intro" && (
             <button
               onClick={toggle}
-              title={speaking ? "إيقاف القراءة" : "قراءة الدرس صوتياً"}
+              disabled={loading}
+              title={speaking ? "إيقاف القراءة" : loading ? "جاري التحميل..." : "قراءة الدرس صوتياً"}
               style={{
                 display: "flex", alignItems: "center", gap: "7px",
                 background: speaking ? "rgba(239,68,68,0.25)" : "rgba(255,255,255,0.15)",
                 border: `1px solid ${speaking ? "rgba(239,68,68,0.6)" : "rgba(255,255,255,0.3)"}`,
                 color: "#fff", borderRadius: "10px", padding: "7px 14px",
-                fontSize: "13px", fontWeight: 700, cursor: "pointer", transition: "all 0.2s",
+                fontSize: "13px", fontWeight: 700, cursor: loading ? "wait" : "pointer", transition: "all 0.2s",
+                opacity: loading ? 0.7 : 1,
               }}>
-              {speaking ? (
+              {loading ? (
+                <> ⏳ جاري التحميل... </>
+              ) : speaking ? (
                 <>
                   <span style={{ display: "flex", gap: "2px", alignItems: "center" }}>
                     {[1,1.6,1,1.8,1].map((h, i) => (

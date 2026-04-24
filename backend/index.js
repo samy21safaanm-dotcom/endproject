@@ -15,6 +15,7 @@ const {
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { TranslateClient, TranslateTextCommand } = require("@aws-sdk/client-translate");
 const { BedrockRuntimeClient, InvokeModelCommand } = require("@aws-sdk/client-bedrock-runtime");
+const { PollyClient, SynthesizeSpeechCommand } = require("@aws-sdk/client-polly");
 const { initDb, insertFile, deleteFile, listFiles } = require("./db");
 
 const app = express();
@@ -71,6 +72,9 @@ const translator = new TranslateClient(awsClientConfig);
 
 // --- AWS Bedrock client ---
 const bedrock = new BedrockRuntimeClient(awsClientConfig);
+
+// --- AWS Polly client ---
+const polly = new PollyClient(awsClientConfig);
 
 app.use(cors());
 app.use(express.json());
@@ -1617,6 +1621,38 @@ app.use((req, res) => {
 });
 
 // --- Global error handler ---
+// ── TTS endpoint using AWS Polly ─────────────────────────────────────────
+app.post("/api/tts", async (req, res) => {
+  const { text, voice } = req.body;
+  if (!text || typeof text !== "string" || text.trim().length === 0) {
+    return res.status(400).json({ error: "text is required" });
+  }
+  // Limit text length for safety
+  const safeText = text.slice(0, 3000);
+  const voiceId = voice || "Hala"; // Hala/Zayd = Neural Arabic, Zeina = Standard Arabic
+  try {
+    const cmd = new SynthesizeSpeechCommand({
+      Text: safeText,
+      OutputFormat: "mp3",
+      VoiceId: voiceId,
+      LanguageCode: "arb",
+      Engine: ["Hala", "Zayd"].includes(voiceId) ? "neural" : "standard",
+    });
+    const data = await polly.send(cmd);
+    // data.AudioStream is a readable stream
+    res.set("Content-Type", "audio/mpeg");
+    // Collect stream into buffer
+    const chunks = [];
+    for await (const chunk of data.AudioStream) {
+      chunks.push(chunk);
+    }
+    res.send(Buffer.concat(chunks));
+  } catch (err) {
+    console.error("Polly TTS error:", err);
+    res.status(500).json({ error: err.message || "TTS failed" });
+  }
+});
+
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   const status = err.status || err.statusCode || 500;
