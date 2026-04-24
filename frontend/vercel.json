@@ -1,6 +1,4 @@
 {
-  "buildCommand": "cd frontend && npm install && npm run build",
-  "outputDirectory": "frontend/dist",
   "rewrites": [
     { "source": "/upload/(.*)", "destination": "http://98.87.156.70:4000/upload/$1" },
     { "source": "/files/(.*)", "destination": "http://98.87.156.70:4000/files/$1" },
