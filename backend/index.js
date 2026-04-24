@@ -1615,12 +1615,6 @@ app.post("/generate-simulation", async (req, res) => {
   }
 });
 
-// --- 404 handler ---
-app.use((req, res) => {
-  res.status(404).json({ error: "Endpoint not found", path: req.path });
-});
-
-// --- Global error handler ---
 // ── TTS endpoint using AWS Polly ─────────────────────────────────────────
 app.post("/api/tts", async (req, res) => {
   const { text, voice } = req.body;
@@ -1653,6 +1647,12 @@ app.post("/api/tts", async (req, res) => {
   }
 });
 
+// --- 404 handler ---
+app.use((req, res) => {
+  res.status(404).json({ error: "Endpoint not found", path: req.path });
+});
+
+// --- Global error handler ---
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   const status = err.status || err.statusCode || 500;
