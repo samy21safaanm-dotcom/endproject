@@ -1,11 +1,12 @@
 {
   "rewrites": [
-    { "source": "/upload/(.*)", "destination": "http://98.87.156.70/upload/$1" },
-    { "source": "/files/(.*)", "destination": "http://98.87.156.70/files/$1" },
-    { "source": "/extract/(.*)", "destination": "http://98.87.156.70/extract/$1" },
-    { "source": "/translate/(.*)", "destination": "http://98.87.156.70/translate/$1" },
-    { "source": "/generate-lesson/(.*)", "destination": "http://98.87.156.70/generate-lesson/$1" },
-    { "source": "/generate-images/(.*)", "destination": "http://98.87.156.70/generate-images/$1" },
-    { "source": "/generate-simulation/(.*)", "destination": "http://98.87.156.70/generate-simulation/$1" }
+    { "source": "/upload/:path*", "destination": "http://98.87.156.70/upload/:path*" },
+    { "source": "/files/:path*", "destination": "http://98.87.156.70/files/:path*" },
+    { "source": "/extract/:path*", "destination": "http://98.87.156.70/extract/:path*" },
+    { "source": "/translate/:path*", "destination": "http://98.87.156.70/translate/:path*" },
+    { "source": "/generate-lesson/:path*", "destination": "http://98.87.156.70/generate-lesson/:path*" },
+    { "source": "/generate-images/:path*", "destination": "http://98.87.156.70/generate-images/:path*" },
+    { "source": "/generate-simulation/:path*", "destination": "http://98.87.156.70/generate-simulation/:path*" },
+    { "source": "/health", "destination": "http://98.87.156.70/health" }
   ]
 }
